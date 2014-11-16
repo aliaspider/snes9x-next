@@ -44,6 +44,10 @@ static retro_environment_t environ_cb = NULL;
 
 extern s9xcommand_t			keymap[1024];
 
+static uint16* snes9x_frame[2]={NULL,NULL};
+static uint16* snes9x_output_frame = NULL;
+static int snes9x_current_frame_id = 0;
+
 void *retro_get_memory_data(unsigned type)
 {
    uint8_t* data;
@@ -174,7 +178,7 @@ void retro_get_system_info(struct retro_system_info *info)
    info->need_fullpath = false;
    info->valid_extensions = "smc|fig|sfc|gd3|gd7|dx2|bsx|swc";
    info->library_version = "v1.52.4";
-   info->library_name = "SNES9x Next";
+   info->library_name = "SNES9x Next (t-blur)";
    info->block_extract = false;
 }
 
@@ -334,7 +338,7 @@ void retro_get_system_av_info(struct retro_system_av_info *info)
    info->geometry.max_height = 512;
    info->geometry.aspect_ratio = 4.0 / 3.0;
    if (!Settings.PAL)
-      info->timing.fps = 21477272.0 / 357366.0;
+      info->timing.fps = (21477272.0 * 5.0 ) / (357366.0 * 6.0);
    else
       info->timing.fps = 21281370.0 / 425568.0;
    info->timing.sample_rate = 32040.5;
@@ -373,10 +377,16 @@ static void snes_init (void)
 
 #if defined(_POSIX_C_SOURCE) && (_POSIX_C_SOURCE >= 200112L)
    /* request 128-bit alignment here if possible */
-   posix_memalign((void**)&GFX.Screen, 16, GFX.Pitch * 512 * sizeof(uint16));
+   posix_memalign((void**)&snes9x_output_frame, 16, GFX.Pitch * 512 * 3 * sizeof(uint16));
 #else
-   GFX.Screen = (uint16*) calloc(1, GFX.Pitch * 512 * sizeof(uint16));
+   snes9x_output_frame = (uint16*) calloc(1, GFX.Pitch * 512 * 3 * sizeof(uint16));
 #endif
+
+   snes9x_frame[0] = snes9x_output_frame + GFX.Pitch * 512;
+   snes9x_frame[1] = snes9x_frame[0]     + GFX.Pitch * 512;
+   snes9x_current_frame_id = 0;
+   GFX.Screen = snes9x_frame[snes9x_current_frame_id];
+
 
    S9xGraphicsInit();
 
@@ -429,7 +439,7 @@ void retro_deinit(void)
    S9xGraphicsDeinit();
    S9xUnmapAllControls();
    
-   free(GFX.Screen);
+   free(snes9x_output_frame);
 }
 
 void retro_reset (void)
@@ -751,6 +761,9 @@ bool retro_load_game(const struct retro_game_info *game)
    struct retro_memory_map map={ memorydesc+MAX_MAPS-memorydesc_c, memorydesc_c };
    environ_cb(RETRO_ENVIRONMENT_SET_MEMORY_MAPS, &map);
 
+   if (!Settings.PAL)
+      GFX.Screen = snes9x_output_frame;
+
    return TRUE;
 }
 
@@ -768,17 +781,66 @@ unsigned retro_get_region (void)
    return Settings.PAL ? RETRO_REGION_PAL : RETRO_REGION_NTSC; 
 }
 
+
+static inline uint16 mix_RGB565(uint16 c0, uint16 c1, float x)
+{
+   int r0,g0,b0,r1,g1,b1,r,g,b;
+   DECOMPOSE_PIXEL(c0,r0,g0,b0);
+   DECOMPOSE_PIXEL(c1,r1,g1,b1);
+
+   r = r1 + (r0-r1)*x;
+   g = g1 + (g0-g1)*x;
+   b = b1 + (b0-b1)*x;
+
+   return BUILD_PIXEL(r,g,b);
+
+
+
+}
+
 void S9xDeinitUpdate(int width, int height)
 {
-	GFX.Pitch = 2048;		/* Pitch 1024 -> 2048 */
 
-	if (height == 448 || height == 478)
-		GFX.Pitch = 1024;	/* Pitch 2048 -> 1024 */
+   static int current_frame = 0;
+   int i,j;
+
+   GFX.Pitch = 2048;		/* Pitch 1024 -> 2048 */
+
+   if (height == 448 || height == 478)
+      GFX.Pitch = 1024;	/* Pitch 2048 -> 1024 */
+
+   if (Settings.PAL)
+   {
+
+      for (i = 0; i < width; i++)
+      {
+         for (j = 0; j < height; j++)
+         {
+            int current_pixel_id = i + j * (GFX.Pitch>>1);
+            uint16_t current_value = snes9x_frame[snes9x_current_frame_id][current_pixel_id];
+            uint16_t old_value = snes9x_frame[snes9x_current_frame_id^1][current_pixel_id];
+
+            snes9x_output_frame[current_pixel_id] = mix_RGB565(old_value, current_value, current_frame / 5.0);
+         }
+
+      }
+
+      snes9x_current_frame_id ^= 1;
+      GFX.Screen = snes9x_frame[snes9x_current_frame_id];
+
+   }
+
+
+
+
+
+
+
+   const uint16_t *frame = (const uint16_t*)snes9x_output_frame;
 
    // TODO: Reverse case.
    if (!use_overscan)
-   {
-      const uint16_t *frame = (const uint16_t*)GFX.Screen;
+   {      
       if (height == 239)
       {
          frame += 7 * 1024;
@@ -790,10 +852,20 @@ void S9xDeinitUpdate(int width, int height)
          height = 448;
       }
 
-      video_cb(frame, width, height, GFX.Pitch);
    }
-   else
-      video_cb(GFX.Screen, width, height, GFX.Pitch);
+
+   video_cb(frame, width, height, GFX.Pitch);
+   if (Settings.PAL)
+   {
+
+      if(current_frame==4)
+         video_cb(snes9x_frame[snes9x_current_frame_id^1], width, height, GFX.Pitch);
+
+      current_frame ++;
+      current_frame %=5;
+   }
+
+
 }
 
 /* Dummy functions that should probably be implemented correctly later. */
