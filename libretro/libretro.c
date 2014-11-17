@@ -800,17 +800,11 @@ static inline uint16 mix_RGB565(uint16 c0, uint16 c1, float x)
    DECOMPOSE_PIXEL(c0,r0,g0,b0);
    DECOMPOSE_PIXEL(c1,r1,g1,b1);
 
-   x = 1.0 - cc_kernel(x);
-
-
-   r = r1 + (r0-r1)*x;
-   g = g1 + (g0-g1)*x;
-   b = b1 + (b0-b1)*x;
+   r = r0 + (r1-r0)*x;
+   g = g0 + (g1-g0)*x;
+   b = b0 + (b1-b0)*x;
 
    return BUILD_PIXEL(r,g,b);
-
-
-
 }
 
 void S9xDeinitUpdate(int width, int height)
@@ -826,16 +820,19 @@ void S9xDeinitUpdate(int width, int height)
 
    if (Settings.PAL)
    {
+      float blur_factor = cc_kernel(current_frame / 5.0);
+      uint16* current_frame = snes9x_frame[snes9x_current_frame_id];
+      uint16* old_frame = snes9x_frame[snes9x_current_frame_id^1];
 
       for (i = 0; i < width; i++)
       {
          for (j = 0; j < height; j++)
          {
             int current_pixel_id = i + j * (GFX.Pitch>>1);
-            uint16_t current_value = snes9x_frame[snes9x_current_frame_id][current_pixel_id];
-            uint16_t old_value = snes9x_frame[snes9x_current_frame_id^1][current_pixel_id];
+            uint16 current_value = current_frame[current_pixel_id];
+            uint16 old_value = old_frame[current_pixel_id];
 
-            snes9x_output_frame[current_pixel_id] = mix_RGB565(old_value, current_value, current_frame / 5.0);
+            snes9x_output_frame[current_pixel_id] = mix_RGB565(old_value, current_value, blur_factor);
          }
 
       }
