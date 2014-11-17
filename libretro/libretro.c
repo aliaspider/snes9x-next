@@ -825,9 +825,6 @@ void S9xDeinitUpdate(int width, int height)
 
       }
 
-      snes9x_current_frame_id ^= 1;
-      GFX.Screen = snes9x_frame[snes9x_current_frame_id];
-
    }
 
 
@@ -855,14 +852,19 @@ void S9xDeinitUpdate(int width, int height)
    }
 
    video_cb(frame, width, height, GFX.Pitch);
+
    if (Settings.PAL)
    {
 
       if(current_frame==4)
-         video_cb(snes9x_frame[snes9x_current_frame_id^1], width, height, GFX.Pitch);
+         video_cb(snes9x_frame[snes9x_current_frame_id], width, height, GFX.Pitch);
 
       current_frame ++;
       current_frame %=5;
+
+      snes9x_current_frame_id ^= 1;
+      GFX.Screen = snes9x_frame[snes9x_current_frame_id];
+
    }
 
 
