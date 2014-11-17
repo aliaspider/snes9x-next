@@ -848,31 +848,32 @@ void S9xDeinitUpdate(int width, int height)
 
 
 
-   const uint16_t *frame = (const uint16_t*)snes9x_output_frame;
+
+   int frame_offset = 0;
 
    // TODO: Reverse case.
    if (!use_overscan)
    {      
       if (height == 239)
       {
-         frame += 7 * 1024;
+         frame_offset = 7 * 1024;
          height = 224;
       }
       else if (height == 478)
       {
-         frame += 15 * 512;
+         frame_offset = 15 * 512;
          height = 448;
       }
 
    }
 
-   video_cb(frame, width, height, GFX.Pitch);
+   video_cb(snes9x_output_frame + frame_offset, width, height, GFX.Pitch);
 
    if (Settings.PAL)
    {
 
       if(current_frame==4)
-         video_cb(snes9x_frame[snes9x_current_frame_id], width, height, GFX.Pitch);
+         video_cb(snes9x_frame[snes9x_current_frame_id] + frame_offset, width, height, GFX.Pitch);
 
       current_frame ++;
       current_frame %=5;
