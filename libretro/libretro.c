@@ -781,12 +781,27 @@ unsigned retro_get_region (void)
    return Settings.PAL ? RETRO_REGION_PAL : RETRO_REGION_NTSC; 
 }
 
+#include <math.h>
+static inline float cc_int(float x)
+{
+   float val = x * M_PI + sinf(x * M_PI);
+   return (val > M_PI) ? M_PI : (val < -M_PI) ? -M_PI : val;
+}
+
+static inline float cc_kernel(float x)
+{
+   return (cc_int(x + 0.5) - cc_int(x - 0.5)) / (2.0 * M_PI);
+}
+
 
 static inline uint16 mix_RGB565(uint16 c0, uint16 c1, float x)
 {
    int r0,g0,b0,r1,g1,b1,r,g,b;
    DECOMPOSE_PIXEL(c0,r0,g0,b0);
    DECOMPOSE_PIXEL(c1,r1,g1,b1);
+
+   x = 1.0 - cc_kernel(x);
+
 
    r = r1 + (r0-r1)*x;
    g = g1 + (g0-g1)*x;
